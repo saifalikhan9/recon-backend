@@ -1,0 +1,132 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+// Enums (Postgres features)
+enum Role {
+  ADMIN
+  ANALYST
+  VIEWER
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ReconStatus {
+  MATCHED
+  PARTIAL_MATCH
+  UNMATCHED
+  DUPLICATE
+}
+
+// 1. User Model
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  username  String
+  role      Role     @default(VIEWER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  uploads   UploadJob[]
+  auditLogs AuditLog[]
+}
+
+// 2. System Record (The Company's Internal Data)
+model SystemRecord {
+  id              String   @id @default(uuid())
+  transactionId   String   @unique
+  amount          Decimal  @db.Decimal(10, 2) // Money should always be Decimal, not Float
+  referenceNumber String
+  date            DateTime
+  details         String?
+  createdAt       DateTime @default(now())
+
+  // Relations
+  reconciliations ReconciliationResult[]
+}
+
+// 3. Upload Job (Async File Tracking)
+model UploadJob {
+  id               String    @id @default(uuid())
+  filename         String
+  status           JobStatus @default(PENDING)
+  totalRecords     Int       @default(0)
+  processedRecords Int       @default(0)
+  errors           Json?     // Storing array of errors as JSON
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Relations
+  userId  String
+  user    User                   @relation(fields: [userId], references: [id])
+  results ReconciliationResult[]
+}
+
+// 4. Reconciliation Result (The Output)
+model ReconciliationResult {
+  id            String      @id @default(uuid())
+  
+  // Uploaded Data
+  uploadedTxId   String
+  uploadedAmount Decimal     @db.Decimal(10, 2)
+  
+  // Logic Result
+  status         ReconStatus
+  variance       Decimal?    @db.Decimal(10, 2) @default(0)
+  
+  // Admin/Analyst Overrides
+  isManuallyCorrected Boolean @default(false)
+  adminNotes          String?
+
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  // Relations
+  uploadJobId    String
+  uploadJob      UploadJob     @relation(fields: [uploadJobId], references: [id])
+  
+  systemRecordId String?
+  systemRecord   SystemRecord? @relation(fields: [systemRecordId], references: [id])
+  
+  auditLogs      AuditLog[]
+
+  // Indexes for performance
+  @@index([status])
+  @@index([uploadJobId])
+}
+
+// 5. Audit Log (History)
+model AuditLog {
+  id             String   @id @default(uuid())
+  action         String   // e.g. "STATUS_CHANGE"
+  
+  // Flexible JSON fields for "Before" and "After"
+  oldValue       Json?
+  newValue       Json?
+  
+  timestamp      DateTime @default(now())
+
+  // Relations
+  recordId       String
+  record         ReconciliationResult @relation(fields: [recordId], references: [id])
+  
+  changedById    String
+  changedBy      User     @relation(fields: [changedById], references: [id])
+}

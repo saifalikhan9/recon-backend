@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  # Service 1: The Database
+  postgres:
+    image: postgres:16
+    container_name: postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mydb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # Fixed: Uses 'postgres' user and 'mydb' database
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mydb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Service 2: The Backend API
+  backend:
+    build: .
+    container_name: recon_backend
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Fixed: Matches the credentials defined in the postgres service above
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/mydb?schema=public"
+      JWT_SECRET: "6cf9730e9ce213fda67926b57d453960"
+      PORT: 3000
+      NODE_ENV: "production"
+    command: sh -c "npx prisma migrate deploy && npm start"
+
+# Fixed: Defined the volume name used above
+volumes:
+  postgres_data:
