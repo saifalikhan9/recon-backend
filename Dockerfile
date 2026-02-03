@@ -9,7 +9,7 @@ COPY package*.json ./
 
 # 4. Install dependencies
 # We use 'ci' (clean install) for consistent builds
-RUN npm ci
+RUN npm install
 
 # 5. Copy the rest of the application code
 COPY . .
