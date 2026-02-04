@@ -26,7 +26,7 @@ services:
     build: .
     container_name: recon_backend
     ports:
-      - "3000:3000"
+      - "3001:3001"
     depends_on:
       postgres:
         condition: service_healthy
@@ -34,7 +34,7 @@ services:
       # Fixed: Matches the credentials defined in the postgres service above
       DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/mydb?schema=public"
       JWT_SECRET: "6cf9730e9ce213fda67926b57d453960"
-      PORT: 3000
+      PORT: 3001
       NODE_ENV: "production"
     command: sh -c "npx prisma migrate deploy && npm start"
 

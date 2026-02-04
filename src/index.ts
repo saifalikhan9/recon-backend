@@ -1,5 +1,5 @@
 import express from "express";
-
+import cors from "cors"
 import authRoutes from "./routes/authRoutes";     // Rename 'router' to 'authRoutes'
 import uploadRoutes from "./routes/uploadRoute"; // Import the new route
 import reconiliationRoute from "./routes/reconciliationRoute"
@@ -8,7 +8,7 @@ import { prisma } from "./config/prisma"; // Import your DB connection
 const app = express();
 
 // 1. Middlewares
-// app.use(cors()); // Required for React
+app.use(cors()); // Required for React
 app.use(express.json()); 
 
 // 2. Routes
@@ -27,8 +27,8 @@ const startServer = async () => {
     await prisma.$connect();
     console.log("✅ Database connected");
     
-    app.listen(3000, () => {
-        console.log("🚀 Server running on port 3000");
+    app.listen(3001, () => {
+        console.log("🚀 Server running on port 3001");
     });
   } catch (error) {
     console.log("❌ Database failed to connect", error);

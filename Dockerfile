@@ -21,7 +21,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # 8. Expose the port the app runs on
-EXPOSE 3000
+EXPOSE 3001
 
 # 9. Define the command to run the app
 # We assume you have a "start" script in package.json (e.g., "node dist/server.js")
