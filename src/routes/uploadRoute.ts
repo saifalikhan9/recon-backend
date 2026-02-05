@@ -5,7 +5,7 @@ import { protect, authorize } from "../middlewares/auth";
 
 const router = express.Router();
 
-// 1. Configure Multer (Temp Storage)
+
 // This saves the file to 'uploads/' folder locally before processing
 const upload = multer({ dest: "uploads/" });
 
@@ -16,7 +16,7 @@ router.post(
   "/", 
   protect, 
   authorize("ADMIN", "ANALYST"), 
-  upload.single("file"), // Expects a form-data field named 'file'
+  upload.single("file"), 
   uploadFile
 );
 

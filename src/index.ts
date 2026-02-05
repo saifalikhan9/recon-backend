@@ -1,27 +1,26 @@
 import express from "express";
 import cors from "cors"
-import authRoutes from "./routes/authRoutes";     // Rename 'router' to 'authRoutes'
-import uploadRoutes from "./routes/uploadRoute"; // Import the new route
+import authRoutes from "./routes/authRoutes";   
+import uploadRoutes from "./routes/uploadRoute";
 import reconiliationRoute from "./routes/reconciliationRoute"
-import { prisma } from "./config/prisma"; // Import your DB connection
+import { prisma } from "./config/prisma"; 
 
 const app = express();
 
-// 1. Middlewares
-app.use(cors()); // Required for React
+
+app.use(cors());
 app.use(express.json()); 
 
-// 2. Routes
+
 app.get("/", async (req, res) => {
     res.json({ message: "Server is running" }).status(200);
 });
 
-// Mount the routes
-app.use("/api/auth", authRoutes);            // Login & Register
-app.use("/api/upload", uploadRoutes);        // File Uploads
-app.use("/api/reconciliation", reconiliationRoute); // Dashboard Data
+app.use("/api/auth", authRoutes);           
+app.use("/api/upload", uploadRoutes);       
+app.use("/api/reconciliation", reconiliationRoute);
 
-// 3. Start Server with DB Connection
+
 const startServer = async () => {
   try {
     await prisma.$connect();

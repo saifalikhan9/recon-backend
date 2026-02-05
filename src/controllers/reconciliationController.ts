@@ -1,7 +1,8 @@
 import {  Response } from "express";
 import { prisma } from "../config/prisma";
-import { AuthRequest } from "../middlewares/auth";
+
 import { auditService } from "../service/audit-service";
+import { AuthRequest } from "../types/jwt";
 
 // 1. GET DASHBOARD STATS (For the Cards & Charts)
 // GET /api/reconciliation/stats?jobId=...
@@ -11,7 +12,7 @@ export const getStats = async (req: AuthRequest, res: Response): Promise<any> =>
   try {
     const whereCondition = jobId ? { uploadJobId: String(jobId) } : {};
 
-    // Run count queries in parallel for speed
+   
     const [total, matched, partial, unmatched, duplicate] = await Promise.all([
       prisma.reconciliationResult.count({ where: whereCondition }),
       prisma.reconciliationResult.count({ where: { ...whereCondition, status: "MATCHED" } }),
@@ -40,9 +41,9 @@ export const getResults = async (req: AuthRequest, res: Response) => {
   if (jobId) where.uploadJobId = String(jobId);
   if (status) where.status = String(status);
   
-  // Search by Transaction ID
+
   if (search) {
-    where.uploadedTxId = { contains: String(search) }; // 'mode: insensitive' is default in some Postgres setups
+    where.uploadedTxId = { contains: String(search) }; 
   }
 
   try {
@@ -50,8 +51,8 @@ export const getResults = async (req: AuthRequest, res: Response) => {
       where,
       skip,
       take: Number(limit),
-      orderBy: { variance: 'desc' }, // Show biggest problems first
-      include: { systemRecord: true } // Return the System Record details too
+      orderBy: { variance: 'desc' }, 
+      include: { systemRecord: true } 
     });
 
     const total = await prisma.reconciliationResult.count({ where });
@@ -68,28 +69,27 @@ export const manualOverride = async (req: AuthRequest, res: Response): Promise<a
   const { id } = req.params as { id: string };
   const { status, note  } = req.body;
   
-  // Safety check for User ID
   const userId = req.user?.id || req.user?.userId;
   if (!userId) return res.status(401).json({ message: "Unauthorized: User ID missing" });
   const role = req.user?.role 
   if (!role) return res.status(401).json({ message: "Unauthorized: User Role missing" });
 
   try {
-    // 1. Fetch Current State (Old Value)
+
     const currentRecord = await prisma.reconciliationResult.findUnique({ where: { id } });
     if (!currentRecord) return res.status(404).json({ message: "Record not found" });
 
-    // 2. Perform the Update
+
     const updatedRecord = await prisma.reconciliationResult.update({
       where: { id },
       data: { 
         status: status,
-        adminNotes: note, // Ensure this field exists in your schema
+        adminNotes: note, 
         isManuallyCorrected: true
       }
     });
 
-    // 3. Log via Service (Keeps controller clean)
+
     await auditService.logChange({
       reconId: id,
       action: "MANUAL_STATUS_CHANGE",

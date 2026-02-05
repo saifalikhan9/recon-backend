@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../config/prisma";
 
-// Generate JWT Helper
+
 const generateToken = (id: string, role: string) => {
   return jwt.sign({ id, role }, process.env.JWT_SECRET as string, {
     expiresIn: "1d",
@@ -17,22 +17,21 @@ export const register = async (req: Request, res: Response): Promise<any> => {
     const { username, email, password, role } = req.body;
 console.log(username,email,password);
 
-    // Validation
+
     if (!username || !email || !password) {
       return res.status(400).json({ message: "Please fill all fields" });
     }
 
-    // Check if user exists
+
     const userExists = await prisma.user.findUnique({ where: { email } });
     if (userExists) {
       return res.status(400).json({ message: "User already exists" });
     }
 
-    // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user
+
     const user = await prisma.user.create({
       data: {
         username,
@@ -65,7 +64,7 @@ export const login = async (req: Request, res: Response): Promise<any> => {
   try {
     const { email, password } = req.body;
 
-    // Check for user email
+
     const user = await prisma.user.findUnique({ where: { email } });
 
     if (user && (await bcrypt.compare(password, user.password))) {

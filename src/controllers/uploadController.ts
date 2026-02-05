@@ -3,9 +3,10 @@ import fs from "fs";
 import csv from "csv-parser";
 import { prisma } from "../config/prisma";
 import { reconcileRow } from "../utils/reconciliationLogic";
-import { AuthRequest } from "../middlewares/auth";
+import { AuthRequest } from "../types/jwt";
 
-// 1. Controller (Unchanged, just added a log)
+
+
 export const uploadFile = async (req: AuthRequest, res: Response): Promise<any> => {
   if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
@@ -22,7 +23,7 @@ export const uploadFile = async (req: AuthRequest, res: Response): Promise<any> 
 
     res.status(202).json({ message: "File accepted. Processing started.", jobId: job.id });
 
-    // Trigger Background Process
+    
     processFileInBackground(req.file.path, job.id);
 
   } catch (error) {
@@ -32,19 +33,19 @@ export const uploadFile = async (req: AuthRequest, res: Response): Promise<any> 
 };
 
 
-// 2. Background Processor (NOW WITH LOGS)
+
 const processFileInBackground = async (filePath: string, jobId: string) => {
   console.log(`[JOB ${jobId}] Starting background processing...`);
   
   const BATCH_SIZE = 500;
   let batchRows: any[] = [];
   let processedCount = 0;
-  let rowCounter = 0; // Track total rows read from file
+  let rowCounter = 0; 
   
   const seenInFile = new Set<string>();
 
   try {
-    // Check if file actually exists
+
     if (!fs.existsSync(filePath)) {
       throw new Error(`File not found at path: ${filePath}`);
     }
@@ -54,15 +55,13 @@ const processFileInBackground = async (filePath: string, jobId: string) => {
     for await (const row of stream) {
       rowCounter++;
 
-      // DEBUG: Print the raw keys of the FIRST row only
-      // This tells us if your CSV headers match what you expect
+
       if (rowCounter === 1) {
         console.log(`[JOB ${jobId}] FIRST ROW RAW DATA:`, row);
         console.log(`[JOB ${jobId}] DETECTED HEADERS:`, Object.keys(row));
       }
 
-      // 1. Robust Key Normalization
-      // We check multiple common variations to be safe
+
       const txId = row['transactionID'] || row['Transaction ID'] || row['transactionId'] || row['id'];
       const amt = row['amount'] || row['Amount'] || row['AMOUNT'];
       const date = row['date'] || row['Date'];
@@ -73,7 +72,6 @@ const processFileInBackground = async (filePath: string, jobId: string) => {
         date: date
       };
 
-      // DEBUG: Log why a row might be skipped
       if (!cleanRow.transactionId) {
         if (rowCounter <= 5) console.warn(`[JOB ${jobId}] Skipping Row ${rowCounter}: Missing Transaction ID. (Value: ${txId})`);
         continue; 
@@ -84,10 +82,10 @@ const processFileInBackground = async (filePath: string, jobId: string) => {
         continue;
       }
 
-      // 2. Add to Batch
+ 
       batchRows.push(cleanRow);
 
-      // 3. Process Batch
+
       if (batchRows.length >= BATCH_SIZE) {
         console.log(`[JOB ${jobId}] Processing batch of ${batchRows.length} rows...`);
         await processBatch(batchRows, jobId, seenInFile);
@@ -102,7 +100,7 @@ const processFileInBackground = async (filePath: string, jobId: string) => {
       }
     }
 
-    // 4. Process Leftovers
+
     if (batchRows.length > 0) {
       console.log(`[JOB ${jobId}] Processing final batch of ${batchRows.length} rows...`);
       await processBatch(batchRows, jobId, seenInFile);
@@ -111,7 +109,7 @@ const processFileInBackground = async (filePath: string, jobId: string) => {
 
     console.log(`[JOB ${jobId}] COMPLETED. Total rows: ${rowCounter}, Processed: ${processedCount}`);
 
-    // 5. Mark Complete
+
     await prisma.uploadJob.update({
       where: { id: jobId },
       data: { 
@@ -124,7 +122,7 @@ const processFileInBackground = async (filePath: string, jobId: string) => {
   } catch (error) {
     console.error(`[JOB ${jobId}] CRITICAL FAILURE:`, error);
     
-    // IMPORTANT: Update DB to show failure
+
     await prisma.uploadJob.update({
       where: { id: jobId },
       data: { 
@@ -133,7 +131,7 @@ const processFileInBackground = async (filePath: string, jobId: string) => {
       }
     });
   } finally {
-    // 6. Cleanup
+ 
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
       console.log(`[JOB ${jobId}] Cleaned up temp file.`);
@@ -141,12 +139,12 @@ const processFileInBackground = async (filePath: string, jobId: string) => {
   }
 };
 
-// --- HELPER: Batch Logic ---
+
 const processBatch = async (rows: any[], jobId: string, seenInFile: Set<string>) => {
   try {
     const transactionIds = rows.map(r => r.transactionId);
 
-    // DEBUG log
+
     // console.log(`[BATCH] Lookup ${transactionIds.length} IDs in DB...`);
 
     const systemRecords = await prisma.systemRecord.findMany({
@@ -178,7 +176,7 @@ const processBatch = async (rows: any[], jobId: string, seenInFile: Set<string>)
         uploadedAmount: row.amount,
         status: result.status,
         variance: result.variance,
-        // Ensure this is properly handled if systemRecord is null
+ 
         systemRecordId: systemRecord?.id || null 
       });
     }
@@ -191,6 +189,6 @@ const processBatch = async (rows: any[], jobId: string, seenInFile: Set<string>)
     }
   } catch (err) {
     console.error(`[BATCH ERROR] Failed to process batch:`, err);
-    throw err; // Re-throw to trigger the main catch block
+    throw err;
   }
 };

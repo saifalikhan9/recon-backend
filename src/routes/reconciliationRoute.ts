@@ -12,7 +12,6 @@ router.get("/results", protect, getResults);
 router.get("/audit/:reconId", protect, getAuditLogs);
 
 // 2. Manual Override (Write)
-// This calls the transaction-safe controller we built earlier
 router.patch("/:id/status", protect,authorize("ADMIN","ANALYST"), manualOverride);
 
 export default router;
