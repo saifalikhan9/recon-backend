@@ -15,6 +15,7 @@ const generateToken = (id: string, role: string) => {
 export const register = async (req: Request, res: Response): Promise<any> => {
   try {
     const { username, email, password, role } = req.body;
+console.log(username,email,password);
 
     // Validation
     if (!username || !email || !password) {
