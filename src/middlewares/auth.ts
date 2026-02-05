@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import { prisma } from "../config/prisma";
 
+
+
 // ✅ 1. Define the Custom Interface locally (Bypasses the global error)
 export interface AuthRequest extends Request {
   user?: JwtPayload;
@@ -26,6 +28,7 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
       }
 
       // ✅ Now TypeScript knows 'user' exists on 'req'
+      console.log(user)
       req.user = user as any; 
       next();
     } catch (error) {

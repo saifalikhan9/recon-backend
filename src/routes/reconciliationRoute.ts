@@ -1,13 +1,18 @@
 import express from "express";
-import { getStats, getResults, manualOverride } from "../controllers/reconciliationController";
+import { getResults, getStats, manualOverride } from "../controllers/reconciliationController";
 import { protect, authorize } from "../middlewares/auth";
+import { getAuditLogs } from "../controllers/autditController";
 
 const router = express.Router();
 
 router.get("/stats", protect, getStats);
 router.get("/results", protect, getResults);
 
-// Only Admins or Analysts can fix data
-router.patch("/:id", protect, authorize("ADMIN", "ANALYST"), manualOverride);
+// 1. Audit History (Read)
+router.get("/audit/:reconId", protect, getAuditLogs);
+
+// 2. Manual Override (Write)
+// This calls the transaction-safe controller we built earlier
+router.patch("/:id/status", protect,authorize("ADMIN","ANALYST"), manualOverride);
 
 export default router;

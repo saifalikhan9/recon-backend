@@ -880,6 +880,8 @@ export const AuditLogScalarFieldEnum = {
   action: 'action',
   oldValue: 'oldValue',
   newValue: 'newValue',
+  source: 'source',
+  userId: 'userId',
   timestamp: 'timestamp',
   recordId: 'recordId',
   changedById: 'changedById'

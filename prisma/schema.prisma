@@ -121,6 +121,8 @@ model AuditLog {
   oldValue       Json?
   newValue       Json?
   
+  source    String   // "SYSTEM", "USER_API", "CSV_UPLOAD"
+  userId    String?  // Who did it? (Null if System)
   timestamp      DateTime @default(now())
 
   // Relations

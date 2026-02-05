@@ -5,145 +5,192 @@ import { prisma } from "../config/prisma";
 import { reconcileRow } from "../utils/reconciliationLogic";
 import { AuthRequest } from "../middlewares/auth";
 
-// 1. The Controller to Accept the File
+// 1. Controller (Unchanged, just added a log)
 export const uploadFile = async (req: AuthRequest, res: Response): Promise<any> => {
   if (!req.file) return res.status(400).json({ message: "No file uploaded" });
 
   try {
-    // A. Create the Job Entry immediately so UI shows "Processing"
+    console.log(`[UPLOAD] Received file: ${req.file.originalname} (${req.file.path})`);
+
     const job = await prisma.uploadJob.create({
       data: {
         filename: req.file.originalname,
         status: "PROCESSING",
-        userId: req?.user?.id, // Assumes auth middleware attached user
+        userId: req?.user?.id, 
       },
     });
 
-    // B. Send Response immediately (Don't make the user wait!)
     res.status(202).json({ message: "File accepted. Processing started.", jobId: job.id });
 
-    // C. Trigger the Heavy Processing (Fire and Forget)
+    // Trigger Background Process
     processFileInBackground(req.file.path, job.id);
 
   } catch (error) {
+    console.error("[UPLOAD] Error in controller:", error);
     res.status(500).json({ message: "Upload failed", error });
   }
 };
 
 
-// 2. The Background Processor (The "Chunking" Magic)
-
+// 2. Background Processor (NOW WITH LOGS)
 const processFileInBackground = async (filePath: string, jobId: string) => {
+  console.log(`[JOB ${jobId}] Starting background processing...`);
+  
   const BATCH_SIZE = 500;
-  let batchRows: any[] = []; // Temporary buffer for CSV rows
+  let batchRows: any[] = [];
   let processedCount = 0;
-
-  // Track duplicates within the file itself (Set stores unique IDs)
+  let rowCounter = 0; // Track total rows read from file
+  
   const seenInFile = new Set<string>();
 
-  const stream = fs.createReadStream(filePath).pipe(csv());
+  try {
+    // Check if file actually exists
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found at path: ${filePath}`);
+    }
 
-  for await (const row of stream) {
-    // 1. Sanitize keys (remove spaces/bom)
-    // Sometimes CSV headers have hidden characters. This cleans them.
-    const cleanRow = {
-      transactionId: row['Transaction ID']?.trim(),
-      amount: parseFloat(row['Amount']),
-      // Add other fields if needed
-    };
+    const stream = fs.createReadStream(filePath).pipe(csv());
 
-    if (!cleanRow.transactionId) continue; // Skip empty rows
+    for await (const row of stream) {
+      rowCounter++;
 
-    // 2. Add to Batch
-    batchRows.push(cleanRow);
+      // DEBUG: Print the raw keys of the FIRST row only
+      // This tells us if your CSV headers match what you expect
+      if (rowCounter === 1) {
+        console.log(`[JOB ${jobId}] FIRST ROW RAW DATA:`, row);
+        console.log(`[JOB ${jobId}] DETECTED HEADERS:`, Object.keys(row));
+      }
 
-    // 3. If Batch is full, process it
-    if (batchRows.length >= BATCH_SIZE) {
+      // 1. Robust Key Normalization
+      // We check multiple common variations to be safe
+      const txId = row['transactionID'] || row['Transaction ID'] || row['transactionId'] || row['id'];
+      const amt = row['amount'] || row['Amount'] || row['AMOUNT'];
+      const date = row['date'] || row['Date'];
+
+      const cleanRow = {
+        transactionId: txId?.trim(),
+        amount: parseFloat(amt),
+        date: date
+      };
+
+      // DEBUG: Log why a row might be skipped
+      if (!cleanRow.transactionId) {
+        if (rowCounter <= 5) console.warn(`[JOB ${jobId}] Skipping Row ${rowCounter}: Missing Transaction ID. (Value: ${txId})`);
+        continue; 
+      }
+      
+      if (isNaN(cleanRow.amount)) {
+        if (rowCounter <= 5) console.warn(`[JOB ${jobId}] Skipping Row ${rowCounter}: Invalid Amount. (Value: ${amt})`);
+        continue;
+      }
+
+      // 2. Add to Batch
+      batchRows.push(cleanRow);
+
+      // 3. Process Batch
+      if (batchRows.length >= BATCH_SIZE) {
+        console.log(`[JOB ${jobId}] Processing batch of ${batchRows.length} rows...`);
+        await processBatch(batchRows, jobId, seenInFile);
+        processedCount += batchRows.length;
+        
+        await prisma.uploadJob.update({
+          where: { id: jobId },
+          data: { processedRecords: processedCount }
+        });
+
+        batchRows = [];
+      }
+    }
+
+    // 4. Process Leftovers
+    if (batchRows.length > 0) {
+      console.log(`[JOB ${jobId}] Processing final batch of ${batchRows.length} rows...`);
       await processBatch(batchRows, jobId, seenInFile);
       processedCount += batchRows.length;
-      
-      // Update Job Progress (Optional: Doing this every batch keeps UI alive)
-      await prisma.uploadJob.update({
-        where: { id: jobId },
-        data: { processedRecords: processedCount }
-      });
+    }
 
-      batchRows = []; // Clear buffer
+    console.log(`[JOB ${jobId}] COMPLETED. Total rows: ${rowCounter}, Processed: ${processedCount}`);
+
+    // 5. Mark Complete
+    await prisma.uploadJob.update({
+      where: { id: jobId },
+      data: { 
+        status: "COMPLETED", 
+        processedRecords: processedCount, 
+        totalRecords: processedCount 
+      }
+    });
+
+  } catch (error) {
+    console.error(`[JOB ${jobId}] CRITICAL FAILURE:`, error);
+    
+    // IMPORTANT: Update DB to show failure
+    await prisma.uploadJob.update({
+      where: { id: jobId },
+      data: { 
+        status: "FAILED", 
+        errors: { message: error instanceof Error ? error.message : "Unknown error" } 
+      }
+    });
+  } finally {
+    // 6. Cleanup
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`[JOB ${jobId}] Cleaned up temp file.`);
     }
   }
-
-  // 4. Process remaining rows (Leftovers)
-  if (batchRows.length > 0) {
-    await processBatch(batchRows, jobId, seenInFile);
-    processedCount += batchRows.length;
-  }
-
-  // 5. Mark Job Complete
-  await prisma.uploadJob.update({
-    where: { id: jobId },
-    data: { 
-      status: "COMPLETED", 
-      processedRecords: processedCount, 
-      totalRecords: processedCount 
-    }
-  });
-
-  // 6. Delete Temp File
-  fs.unlinkSync(filePath);
 };
 
-// --- HELPER FUNCTION: The "Batch Logic" ---
+// --- HELPER: Batch Logic ---
 const processBatch = async (rows: any[], jobId: string, seenInFile: Set<string>) => {
-  // A. Extract all IDs from this batch
-  const transactionIds = rows.map(r => r.transactionId);
+  try {
+    const transactionIds = rows.map(r => r.transactionId);
 
-  // B. Fetch ALL matching System Records in ONE query
-  const systemRecords = await prisma.systemRecord.findMany({
-    where: { transactionId: { in: transactionIds } }
-  });
+    // DEBUG log
+    // console.log(`[BATCH] Lookup ${transactionIds.length} IDs in DB...`);
 
-  // C. Create a "Lookup Map" for instant access
-  // Instead of looping through the array every time, we make a Hash Map.
-  // Map Key: TransactionID -> Value: Record Object
-  const systemMap = new Map(systemRecords.map(rec => [rec.transactionId, rec]));
+    const systemRecords = await prisma.systemRecord.findMany({
+      where: { transactionId: { in: transactionIds } }
+    });
 
-  const resultsToSave: any[] = [];
+    const systemMap = new Map(systemRecords.map(rec => [rec.transactionId, rec]));
+    const resultsToSave: any[] = [];
 
-  // D. Run Logic on the Batch
-  for (const row of rows) {
-    // Check for "File Duplicate" (Did we see this ID earlier in the file?)
-    if (seenInFile.has(row.transactionId)) {
+    for (const row of rows) {
+      if (seenInFile.has(row.transactionId)) {
+        resultsToSave.push({
+          uploadJobId: jobId,
+          uploadedTxId: row.transactionId,
+          uploadedAmount: row.amount,
+          status: "DUPLICATE",
+          variance: 0
+        });
+        continue;
+      }
+      seenInFile.add(row.transactionId);
+
+      const systemRecord = systemMap.get(row.transactionId);
+      const result = reconcileRow(row.amount, systemRecord || null);
+
       resultsToSave.push({
         uploadJobId: jobId,
         uploadedTxId: row.transactionId,
         uploadedAmount: row.amount,
-        status: "DUPLICATE",
-        variance: 0
+        status: result.status,
+        variance: result.variance,
+        // Ensure this is properly handled if systemRecord is null
+        systemRecordId: systemRecord?.id || null 
       });
-      continue;
     }
-    seenInFile.add(row.transactionId);
 
-    // Look up System Record from our Map (Instant O(1) speed)
-    const systemRecord = systemMap.get(row.transactionId);
-
-    // Run the Math Logic
-    const result = reconcileRow(row.amount, systemRecord || null);
-
-    resultsToSave.push({
-      uploadJobId: jobId,
-      uploadedTxId: row.transactionId,
-      uploadedAmount: row.amount,
-      status: result.status,
-      variance: result.variance,
-      systemRecordId: result.systemRecordId
-    });
-  }
-
-  // E. Bulk Insert Results
-  if (resultsToSave.length > 0) {
-    await prisma.reconciliationResult.createMany({
-      data: resultsToSave
-    });
+    if (resultsToSave.length > 0) {
+      await prisma.reconciliationResult.createMany({
+        data: resultsToSave
+      });
+      // console.log(`[BATCH] Saved ${resultsToSave.length} results.`);
+    }
+  } catch (err) {
+    console.error(`[BATCH ERROR] Failed to process batch:`, err);
+    throw err; // Re-throw to trigger the main catch block
   }
 };

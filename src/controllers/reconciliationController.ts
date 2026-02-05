@@ -1,6 +1,7 @@
 import {  Response } from "express";
 import { prisma } from "../config/prisma";
 import { AuthRequest } from "../middlewares/auth";
+import { auditService } from "../service/audit-service";
 
 // 1. GET DASHBOARD STATS (For the Cards & Charts)
 // GET /api/reconciliation/stats?jobId=...
@@ -64,47 +65,43 @@ export const getResults = async (req: AuthRequest, res: Response) => {
 // 3. MANUAL CORRECTION (With Audit Log)
 // PATCH /api/reconciliation/:id
 export const manualOverride = async (req: AuthRequest, res: Response): Promise<any> => {
-  const { id }  = req.params as {id:string};
-  const { status, notes } = req.body;
-  const userId = req.user?.id; // From Auth Middleware
+  const { id } = req.params as { id: string };
+  const { status, note  } = req.body;
+  
+  // Safety check for User ID
+  const userId = req.user?.id || req.user?.userId;
+  if (!userId) return res.status(401).json({ message: "Unauthorized: User ID missing" });
+  const role = req.user?.role 
+  if (!role) return res.status(401).json({ message: "Unauthorized: User Role missing" });
 
   try {
-    // A. Start a Transaction (Atomicity)
-    // If saving the Audit Log fails, the Update MUST fail too.
-    const result = await prisma.$transaction(async (tx) => {
-      
-      // 1. Get current data for "Old Value"
-      const currentRecord = await tx.reconciliationResult.findUnique({ where: { id }  });
-      if (!currentRecord) throw new Error("Record not found");
+    // 1. Fetch Current State (Old Value)
+    const currentRecord = await prisma.reconciliationResult.findUnique({ where: { id } });
+    if (!currentRecord) return res.status(404).json({ message: "Record not found" });
 
-      // 2. Create Audit Log
-      await tx.auditLog.create({
-        data: {
-          action: "MANUAL_OVERRIDE",
-          recordId: id,
-          changedById: userId,
-          oldValue: { status: currentRecord.status }, // Saving JSON
-          newValue: { status: status, notes },
-
-        }
-      });
-
-      // 3. Update the Record
-      const updatedRecord = await tx.reconciliationResult.update({
-        where: { id },
-        data: {
-          status: status,
-          adminNotes: notes,
-          isManuallyCorrected: true
-        }
-      });
-
-      return updatedRecord;
+    // 2. Perform the Update
+    const updatedRecord = await prisma.reconciliationResult.update({
+      where: { id },
+      data: { 
+        status: status,
+        adminNotes: note, // Ensure this field exists in your schema
+        isManuallyCorrected: true
+      }
     });
 
-    res.json(result);
+    // 3. Log via Service (Keeps controller clean)
+    await auditService.logChange({
+      reconId: id,
+      action: "MANUAL_STATUS_CHANGE",
+      source: role,
+      userId: userId,
+      oldValue: { status: currentRecord.status },
+      newValue: { status: updatedRecord.status, note },
+    });
 
+    res.json(updatedRecord);
   } catch (error) {
-    res.status(500).json({ message: "Update failed", error });
+    console.error(error);
+    res.status(500).json({ message: "Error updating record" });
   }
 };
