@@ -220,7 +220,7 @@ export type UploadJobGroupByOutputType = {
   _max: UploadJobMaxAggregateOutputType | null
 }
 
-type GetUploadJobGroupByPayload<T extends UploadJobGroupByArgs> = Prisma.PrismaPromise<
+export type GetUploadJobGroupByPayload<T extends UploadJobGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<UploadJobGroupByOutputType, T['by']> &
       {
@@ -1447,6 +1447,11 @@ export type UploadJobFindManyArgs<ExtArgs extends runtime.Types.Extensions.Inter
    * Skip the first `n` UploadJobs.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of UploadJobs.
+   */
   distinct?: Prisma.UploadJobScalarFieldEnum | Prisma.UploadJobScalarFieldEnum[]
 }
 

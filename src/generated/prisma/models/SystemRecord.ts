@@ -206,7 +206,7 @@ export type SystemRecordGroupByOutputType = {
   _max: SystemRecordMaxAggregateOutputType | null
 }
 
-type GetSystemRecordGroupByPayload<T extends SystemRecordGroupByArgs> = Prisma.PrismaPromise<
+export type GetSystemRecordGroupByPayload<T extends SystemRecordGroupByArgs> = Prisma.PrismaPromise<
   Array<
     Prisma.PickEnumerable<SystemRecordGroupByOutputType, T['by']> &
       {
@@ -1210,6 +1210,11 @@ export type SystemRecordFindManyArgs<ExtArgs extends runtime.Types.Extensions.In
    * Skip the first `n` SystemRecords.
    */
   skip?: number
+  /**
+   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/distinct Distinct Docs}
+   * 
+   * Filter by unique combinations of SystemRecords.
+   */
   distinct?: Prisma.SystemRecordScalarFieldEnum | Prisma.SystemRecordScalarFieldEnum[]
 }
 
